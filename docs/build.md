@@ -20,7 +20,7 @@ pwsh -NoProfile -File scripts/build.ps1
 ```
 dist\mp4togif.exe
 dist\mp4togif.exe.sha256      SHA-256 校验和
-dist\使用说明.txt                 从 docs\usage.md 复制
+dist\usage.txt                 从 docs\usage.md 复制
 ```
 
 可选参数：`-OutDir <目录>` 换输出目录，`-Python <路径>` 指定解释器（默认用 `.venv`，没有就找 PATH 里的 `python`）。
@@ -85,14 +85,15 @@ Windows PowerShell 5.1 在文件**没有 UTF-8 BOM** 时按系统 ANSI 代码页
 因此：
 
 - `scripts/build.ps1` **保持纯 ASCII**，脚本开头有自检，混进非 ASCII 字节会直接报错退出；
-- 中文名放在 `scripts/build.config.json`（UTF-8），脚本用 `Get-Content -Encoding UTF8` 显式读回：
+- 程序名写在脚本开头的两个常量里，不要再往里加中文：
 
-```json
-{
-  "appName": "mp4togif",
-  "usageFileName": "使用说明.txt"
-}
+```powershell
+$appName       = 'mp4togif'      # -> mp4togif.exe, build\onedir\mp4togif\
+$usageFileName = 'usage.txt'     # -> dist\usage.txt, copied from docs\usage.md
 ```
+
+- **产物名一律 ASCII**：GitHub 会把非 ASCII 的 Release 附件名**静默改写成 `default.txt`**
+  （实测 `usage.txt` 上传后名字就没了），所以发布附件只能是 `usage.txt` 这类名字。
 
 `appName` 同时决定 PyInstaller 的 `--name`、产物 exe 名和运行文件夹名。
 改名字时要同步 `src/launcher.cs` 里的这几个常量：
@@ -113,7 +114,6 @@ Windows PowerShell 5.1 在文件**没有 UTF-8 BOM** 时按系统 ANSI 代码页
 | `src\gui.py` | 界面（tkinter）+ 命令行模式（`--cli`） |
 | `src\launcher.cs` | 单文件自解压启动器 |
 | `scripts\build.ps1` | 四步构建脚本（onedir → 启动器 → 拼接 → 校验和） |
-| `scripts\build.config.json` | 程序显示名等非 ASCII 配置 |
 | `requirements.txt` | 全量锁版依赖，CI 按此安装 |
 
 ## 命令行模式
@@ -133,7 +133,7 @@ Windows PowerShell 5.1 在文件**没有 UTF-8 BOM** 时按系统 ANSI 代码页
 
 | 触发 | 行为 |
 |---|---|
-| 推 tag `v*` | 构建 → 冒烟测试 → 上传 artifact → 发布 GitHub Release（含 exe + `.sha256` + `使用说明.txt`，自动生成变更说明） |
+| 推 tag `v*` | 构建 → 冒烟测试 → 上传 artifact → 发布 GitHub Release（含 exe + `.sha256` + `usage.txt`，自动生成变更说明） |
 | 手动 `Run workflow` | 只构建和冒烟测试，不发布 Release |
 
 冒烟测试这一步会真的跑一遍转换：把 `samples\yuejianglou.mp4` 转成 GIF，

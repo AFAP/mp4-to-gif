@@ -81,8 +81,7 @@ mp4-to-gif/
 ├── samples/
 │   └── yuejianglou.mp4      Sample clip (used by the CI smoke test)
 ├── scripts/
-│   ├── build.ps1            One command from source to single-file exe (ASCII only)
-│   └── build.config.json    Non-ASCII display names (UTF-8)
+│   └── build.ps1            One command from source to single-file exe (ASCII only)
 └── src/
     ├── engine.py            Conversion engine: extraction, keying, palette, ladder, encoding
     ├── gui.py               tkinter GUI + CLI mode (--cli)
@@ -264,7 +263,7 @@ CI (`.github/workflows/release.yml`):
               ├─> windows-latest ─> install pinned deps ─> scripts/build.ps1
  manual run ──┘                                                │
                                                               ▼
-                        dist/mp4togif.exe + .sha256 + 使用说明.txt
+                        dist/mp4togif.exe + .sha256 + usage.txt
                                                               │
                      smoke test (convert the sample + verify alpha channel)
                                                               ▼

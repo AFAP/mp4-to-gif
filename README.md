@@ -76,8 +76,7 @@ mp4-to-gif/
 ├── samples/
 │   └── yuejianglou.mp4      示例素材（CI 冒烟测试用）
 ├── scripts/
-│   ├── build.ps1            一条命令从源码打到单文件 exe（纯 ASCII）
-│   └── build.config.json    程序显示名等非 ASCII 配置（UTF-8）
+│   └── build.ps1            一条命令从源码打到单文件 exe（纯 ASCII）
 └── src/
     ├── engine.py            转换引擎：抽帧、抠像、调色板、阶梯、编码（经验都在注释里）
     ├── gui.py               图形界面（tkinter）+ 命令行模式（--cli）
@@ -259,7 +258,7 @@ CI 流程（`.github/workflows/release.yml`）：
               ├─> windows-latest ─> 安装锁版依赖 ─> scripts/build.ps1
  手动触发  ───┘                                          │
                                                          ▼
-                      dist/mp4togif.exe + .sha256 + 使用说明.txt
+                      dist/mp4togif.exe + .sha256 + usage.txt
                                                          │
                           冒烟测试（跑示例素材 + 校验透明通道）│
                                                          ▼

@@ -16,8 +16,7 @@
 # This file is deliberately ASCII-only. Windows PowerShell 5.1 decodes .ps1 files
 # with the ANSI code page unless they carry a UTF-8 BOM, and this repo keeps every
 # text file BOM-free, so a non-ASCII literal here would be mangled at parse time
-# (mojibake exe name, mojibake paths). Non-ASCII names live in
-# scripts/build.config.json and are read back as explicit UTF-8 instead.
+# (mojibake exe name, mojibake paths). The guard below enforces the rule.
 #
 # Keep the magic in sync with src/launcher.cs:
 #   Magic = "MP4GIF-SFX-v1.0!"  (exactly 16 bytes)
@@ -40,7 +39,7 @@ $ErrorActionPreference = 'Stop'
 if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
     foreach ($b in [IO.File]::ReadAllBytes($PSCommandPath)) {
         if ($b -gt 127) {
-            throw 'scripts/build.ps1 must stay ASCII-only; put non-ASCII text in build.config.json'
+            throw 'scripts/build.ps1 must stay ASCII-only'
         }
     }
 }
@@ -52,13 +51,11 @@ $src  = Join-Path $root 'src'
 $work = Join-Path $root 'build'
 $magicText = 'MP4GIF-SFX-v1.0!'      # must be exactly 16 bytes
 
-# ------------------------------------------------------------------ config
-$cfgPath = Join-Path $scriptDir 'build.config.json'
-if (-not (Test-Path $cfgPath)) { throw "config not found: $cfgPath" }
-$cfg = (Get-Content -Raw -Encoding UTF8 $cfgPath) | ConvertFrom-Json
-$appName = $cfg.appName
-if ([string]::IsNullOrWhiteSpace($appName)) { throw 'build.config.json: appName is empty' }
-$usageFileName = $cfg.usageFileName
+# ------------------------------------------------------------------ names
+# Everything the build emits must have an ASCII name: GitHub silently renames a
+# release asset with a non-ASCII name to "default.txt" on upload.
+$appName       = 'mp4togif'      # -> mp4togif.exe, build\onedir\mp4togif\
+$usageFileName = 'usage.txt'     # -> dist\usage.txt, copied from docs\usage.md
 
 # ------------------------------------------------------------------ toolchain
 function Resolve-PythonPath {

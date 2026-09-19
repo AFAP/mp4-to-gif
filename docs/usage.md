@@ -181,7 +181,7 @@ Release 里下载到的文件：
 ```
 mp4togif.exe          主程序（单文件，只拷这一个就能用）
 mp4togif.exe.sha256   校验和（Get-FileHash -Algorithm SHA256 对一下）
-使用说明.txt              本文件
+usage.txt              本文件
 ```
 
 首次运行后，exe 旁边会多出：
