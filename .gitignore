@@ -1,0 +1,35 @@
+# 密钥与环境
+.env
+.env.*
+*.pem
+*.key
+.credentials.yaml
+
+# 构建产物（由 GitHub Actions 构建并发布到 Release，仓库内永不提交）
+dist/
+build/
+*.exe
+*.spec
+*.spec.bak
+*.sha256
+*.log
+
+# 程序首次运行解压出来的运行文件与诊断日志
+*_运行文件/
+单文件启动日志.txt
+
+# 语言缓存
+.venv/
+__pycache__/
+*.pyc
+.pnpm-store/
+
+# 本地验证残留
+_verify/
+_shots/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
