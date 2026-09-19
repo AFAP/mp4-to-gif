@@ -1,0 +1,91 @@
+name: Build & Release
+
+# Tag push (v*) -> build, smoke test, publish a GitHub Release.
+# Manual "Run workflow" -> build and smoke test only.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pinned dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Build single-file exe
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Smoke test (CLI conversion)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = @(Get-ChildItem dist -Filter *.exe)[0]
+          Write-Host "smoke: $($exe.FullName)"
+          # Hide any ffmpeg installed on the runner, so the ffmpeg bundled inside the
+          # exe is the one that gets exercised.
+          $onPath = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+          if ($onPath) { Write-Host "smoke: hiding $onPath" }
+          $env:PATH = (($env:PATH -split ';') | Where-Object {
+            $_ -and -not (Test-Path -LiteralPath (Join-Path $_ 'ffmpeg.exe') -ErrorAction SilentlyContinue)
+          }) -join ';'
+          if (Get-Command ffmpeg -ErrorAction SilentlyContinue) { throw 'smoke: ffmpeg still on PATH' }
+          # Absolute paths: the app inherits this step's working directory, but do not
+          # rely on it - a wrong cwd silently converts the wrong (or no) file.
+          $sample = (Resolve-Path 'samples/yuejianglou.mp4').Path
+          $smokeOut = Join-Path (Get-Location).Path 'dist/_smoke'
+          $cliArgs = @('--cli', $sample, '--out', $smokeOut, '--size', '240x240', '--limit', '500')
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList $cliArgs -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "smoke: launcher/app exit code $($p.ExitCode)" }
+          $gif = @(Get-ChildItem $smokeOut -Filter *.gif)
+          if ($gif.Count -eq 0) { throw 'smoke: no GIF produced' }
+          Write-Host "smoke: $($gif[0].Name) $($gif[0].Length) bytes"
+          # ASCII-only assertions on purpose: the log is UTF-8, but the patterns must
+          # not depend on how this script itself was encoded.
+          $logFile = @(Get-ChildItem $smokeOut -Filter *.txt)[0]
+          $log = Get-Content -Raw -Encoding UTF8 $logFile.FullName
+          Write-Host $log
+          if ($log -notmatch 'OK\s+GIF') { throw 'smoke: conversion did not report success' }
+          if ($log -match 'FAIL') { throw 'smoke: conversion reported a failure' }
+          if ($log -notmatch '_internal') { throw 'smoke: bundled ffmpeg was not used' }
+          $env:PYTHONPATH = 'src'
+          python -c "import sys; from engine import check_gif; c = check_gif(sys.argv[1]); print(c); sys.exit(0 if (c['transparent'] and c['stable']) else 1)" $gif[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'smoke: transparency check failed' }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp4-to-gif-windows
+          path: |
+            dist/*.exe
+            dist/*.sha256
+            dist/*.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.sha256
+            dist/*.txt
+          generate_release_notes: true
