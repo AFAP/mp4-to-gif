@@ -58,7 +58,7 @@ This tool wraps the whole pipeline into one double-clickable program:
 - ✅ Palette saturation boost: fixes dull colours with zero file-size growth
 - ✅ GIF and WebP: GIF for compatibility, WebP for true alpha and full colour at a fraction of the size
 - ✅ GUI and CLI: pick many files or a whole folder in the GUI, or script it with `--cli`
-- ✅ Nothing to install: ffmpeg and the Python runtime are packed into this one exe, so the target machine needs nothing (hence the ~72 MB — see Quick start)
+- ✅ Nothing to install: ffmpeg and the Python runtime are packed into this one exe, so the target machine needs nothing (hence the ~74 MB — see Quick start)
 - ✅ Post-conversion verification: frame count, transparency index and per-frame background ratio, flagged in the log
 - ✅ Fully local: no network access, no uploads, no telemetry
 
@@ -94,9 +94,9 @@ mp4-to-gif/
 
 ### Download (recommended)
 
-Grab `mp4togif.exe` (~72 MB) from the [Releases](https://github.com/AFAP/mp4-to-gif/releases/latest) page and double-click it.
+Grab `mp4togif.exe` (~74 MB) from the [Releases](https://github.com/AFAP/mp4-to-gif/releases/latest) page and double-click it.
 
-> **Why ~72 MB?** For convenience the program packs ffmpeg (~87 MB uncompressed) and the whole Python runtime (numpy / scipy / Pillow) into this single exe. In exchange the target machine needs **no Python, no ffmpeg and no downloads** — copy it to any Windows box and double-click. Size traded for convenience.
+> **Why ~74 MB?** For convenience the program packs ffmpeg (~87 MB uncompressed) and the whole Python runtime (numpy / scipy / Pillow) into this single exe. In exchange the target machine needs **no Python, no ffmpeg and no downloads** — copy it to any Windows box and double-click. Size traded for convenience.
 
 One-line download (Windows PowerShell):
 

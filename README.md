@@ -53,7 +53,7 @@
 - ✅ 调色板提饱和：颜色发闷时不用加色数，体积零增长地救回来
 - ✅ GIF / WebP 双格式：GIF 兼容性最好，WebP 支持真透明 + 全彩，同体积画质好得多
 - ✅ 图形界面 + 命令行双模式：界面可多选文件或整个文件夹批量转，`--cli` 方便脚本调用
-- ✅ 开箱即用：ffmpeg 与 Python 运行时都打包在这一个 exe 里，目标机器什么都不用装（代价是体积约 72 MB，原因见「4. 快速开始」）
+- ✅ 开箱即用：ffmpeg 与 Python 运行时都打包在这一个 exe 里，目标机器什么都不用装（代价是体积约 74 MB，原因见「4. 快速开始」）
 - ✅ 转换后自动校验：帧数、透明索引、逐帧背景占比，日志里直接标通过 / 注意
 - ✅ 纯本地处理：不联网、不上传素材、不收集任何数据
 
@@ -89,9 +89,9 @@ mp4-to-gif/
 
 ### 下载即用（推荐）
 
-打开 [Releases](https://github.com/AFAP/mp4-to-gif/releases/latest) 页面下载 `mp4togif.exe`（约 72 MB），双击就能用。
+打开 [Releases](https://github.com/AFAP/mp4-to-gif/releases/latest) 页面下载 `mp4togif.exe`（约 74 MB），双击就能用。
 
-> **为什么有 72 MB？** 为了方便使用，程序把 ffmpeg（解压后约 87 MB）和 Python 运行时（含 numpy / scipy / Pillow）一起打包进了这一个 exe。换来的是目标机器**不需要装 Python、不需要装 ffmpeg、也不需要联网下载任何组件** —— 拷到任何一台 Windows 上双击就能跑。这是用体积换省事。
+> **为什么有 74 MB？** 为了方便使用，程序把 ffmpeg（解压后约 87 MB）和 Python 运行时（含 numpy / scipy / Pillow）一起打包进了这一个 exe。换来的是目标机器**不需要装 Python、不需要装 ffmpeg、也不需要联网下载任何组件** —— 拷到任何一台 Windows 上双击就能跑。这是用体积换省事。
 
 一行命令下载（Windows PowerShell）：
 
