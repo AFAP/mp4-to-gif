@@ -100,6 +100,7 @@ class App:
         self.stop_flag = threading.Event()
         self.msgq: queue.Queue = queue.Queue()
         self.adv_open = tk.BooleanVar(value=False)
+        self.last_out_dir = ''           # 最近一次实际写入的输出目录
 
         root.title(APP_TITLE)
         root.configure(bg=BG)
@@ -336,6 +337,8 @@ class App:
                        bg=BG, fg=TXT, activebackground=BG, activeforeground=TXT,
                        selectcolor='#FFFFFF', font=F, bd=0, highlightthickness=0,
                        cursor='hand2').pack(side='left', padx=(14, 0))
+        self.btn_open = ttk.Button(bar, text='打开输出目录', command=self.open_out)
+        self.btn_open.pack(side='right')
 
         self.pb = ttk.Progressbar(body, style='Bar.Horizontal.TProgressbar', mode='determinate')
         self.pb.pack(fill='x', pady=(12, 4))
@@ -410,6 +413,29 @@ class App:
         if d:
             self.var_out.set(d)
 
+    def open_out(self):
+        """在资源管理器里打开成品所在的目录。
+
+        优先用「4 保存到」里指定的目录，其次是最近一次转换实际写入的目录，
+        最后按第一个待转视频推算默认输出目录（视频同级的 gif\ 或 webp\）。
+        """
+        d = self.var_out.get().strip() or self.last_out_dir
+        if not d and self.files:
+            d = os.path.join(os.path.dirname(os.path.abspath(self.files[0])), self.var_fmt.get())
+        if not d:
+            messagebox.showinfo(APP_TITLE,
+                                '还没有可打开的目录。\n\n先选好视频转换一次，'
+                                '或者在「4 保存到」里指定一个目录。')
+            return
+        d = os.path.abspath(d)
+        if not os.path.isdir(d):
+            messagebox.showinfo(APP_TITLE, f'目录还不存在：\n{d}\n\n转换完成后才会有。')
+            return
+        try:
+            os.startfile(d)
+        except Exception as e:                       # noqa: BLE001
+            messagebox.showerror(APP_TITLE, f'打开目录失败：{e}')
+
     def _refresh_files(self):
         self.listbox.delete(0, 'end')
         for f in self.files:
@@ -445,6 +471,8 @@ class App:
                 elif kind == 'progress':
                     done, total = payload
                     self.pb.configure(maximum=total, value=done)
+                elif kind == 'outdir':
+                    self.last_out_dir = payload
                 elif kind == 'done':
                     self.btn_run.configure(state='normal')
                     self.btn_stop.configure(state='disabled')
@@ -521,6 +549,7 @@ class App:
             q.put(('status', f'({i}/{len(files)}) {name}'))
             q.put(('log', f'[{i}/{len(files)}] {name}'))
             out_dir = out_root or os.path.join(os.path.dirname(os.path.abspath(f)), fmt)
+            q.put(('outdir', out_dir))
             try:
                 r = engine.convert(f, out_dir, opt, fmt=fmt, log=lambda s: q.put(('log', s)))
             except Exception:                        # noqa: BLE001

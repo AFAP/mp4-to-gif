@@ -136,6 +136,7 @@ The output lands in `dist\mp4togif.exe`. Requirements and internals: [docs/build
    - red `✗` failure
    - orange `!` needs attention (for example, still over budget at the end of the ladder)
 7. Output goes next to each video in a `gif\` or `webp\` subfolder by default, or to a single folder you choose under "4 保存到"
+8. When it finishes, click **"打开输出目录"** (open output folder) at the bottom right to jump straight to the results in Explorer
 
 **On first run** the exe extracts a `mp4togif_运行文件\` folder next to itself and reuses it afterwards, so later launches are fast. That folder belongs to the program — **do not delete it**.
 
