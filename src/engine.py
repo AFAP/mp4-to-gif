@@ -20,6 +20,9 @@
 9. WebP 支持真 alpha 和 24 位色，同体积下质量远好于 GIF（约 10 倍效率）。
 10. 灰调素材（石头、白墙）靠**提亮度**而不是提饱和度，而且提亮后大片像素趋白，
     文件反而更小。
+11. 抽帧必须**等间隔覆盖整段**并把最后一帧包含进来。GIF 帧数是按「源帧数 × 目标
+    帧率 ÷ 源帧率」算的，从头往后截会丢掉结尾：73 帧 @24fps 抽 10fps 只剩前 59 帧，
+    后面 0.6 秒动作整段不见，循环接回第一帧时会顿一下。
 """
 from __future__ import annotations
 
@@ -34,6 +37,29 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image, ImageEnhance
 from scipy import ndimage
+
+# --- 受限环境（沙箱）下的兼容开关 ------------------------------------------
+# 某些受限环境下的子进程有两个限制：
+#   1) 带 CREATE_NO_WINDOW 创建进程会以 0xC0000142(STATUS_DLL_INIT_FAILED) 失败；
+#   2) 用管道接子进程输出会被拒绝（WinError 5）。
+# 设环境变量 MP4GIF_SANDBOX=1 即可绕开：不建窗口，输出重定向到临时文件而不是管道。
+# 正常环境下这个开关不用开，行为与原来完全一致。
+_SANDBOX = bool(os.environ.get('MP4GIF_SANDBOX'))
+_NO_WINDOW = 0 if _SANDBOX else getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+def _capture(cmd: list) -> tuple[str, str]:
+    """跑子进程并取回 (stdout, stderr)；沙箱下重定向到临时文件，不用管道。"""
+    if not _SANDBOX:
+        r = subprocess.run(cmd, capture_output=True, text=True, creationflags=_NO_WINDOW)
+        return r.stdout or '', r.stderr or ''
+    with tempfile.TemporaryDirectory() as d:
+        fo, fe = os.path.join(d, 'o.txt'), os.path.join(d, 'e.txt')
+        with open(fo, 'w', encoding='utf-8', errors='replace') as a, \
+             open(fe, 'w', encoding='utf-8', errors='replace') as b:
+            subprocess.run(cmd, stdout=a, stderr=b, check=False)
+        return (open(fo, encoding='utf-8', errors='replace').read(),
+                open(fe, encoding='utf-8', errors='replace').read())
 
 # ----------------------------------------------------------------------------
 # ffmpeg 定位
@@ -72,21 +98,26 @@ def find_ffmpeg() -> str:
 
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                   check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                   check=True, creationflags=_NO_WINDOW)
 
 
 # ----------------------------------------------------------------------------
 # 参数
 # ----------------------------------------------------------------------------
 
-# 体积阶梯：帧率优先，色数不低于 20。想更艳就整体上移色数，想更流畅就上移帧率。
+# 体积阶梯：优先用高一档的配置，装不下就降一档。
+#
+# 注意「帧率优先」不代表先砍色数：实测 24 色平涂感明显，颜色对质感的影响更大，
+# 所以色数也从不低的一档起降，只是把帧率顺序放在前面。
+# 240×240、3 秒素材、上限 490KB 时，多半落在 12fps-64色 或 10fps-64色。
 LADDER_FPS = [
-    (12, 32), (12, 24), (10, 32), (10, 24),
-    (8, 32), (8, 24), (6, 32), (6, 24),
+    (12, 96), (12, 64), (10, 96), (10, 64),
+    (8, 96), (8, 64), (6, 64), (6, 48), (6, 32),
 ]
+# 「色彩优先」：先保色数，帧率可以让到 6fps。
 LADDER_COLOR = [
-    (10, 128), (10, 96), (10, 64), (8, 128), (8, 96),
-    (8, 64), (6, 128), (6, 96), (6, 64), (6, 48), (6, 32),
+    (12, 128), (10, 128), (10, 96), (10, 64), (8, 128),
+    (8, 96), (8, 64), (6, 128), (6, 96), (6, 64), (6, 48), (6, 32),
 ]
 
 
@@ -107,6 +138,7 @@ class Options:
     keep_background: bool = False      # True = 不抠底，保留原背景
     webp_quality: int = 80
     webp_fps: int = 0                  # 0 = 用源帧率（上限 24）
+    ladder: tuple = ()                 # 自定义阶梯 ((fps, colors), ...)；空则用内置
 
 
 @dataclass
@@ -142,12 +174,10 @@ def probe(mp4: str) -> dict:
     fp = find_ffprobe()
     if fp:
         try:
-            out = subprocess.run(
+            out, _ = _capture(
                 [fp, '-v', 'error', '-select_streams', 'v:0',
                  '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
-                 '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1', mp4],
-                capture_output=True, text=True,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+                 '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1', mp4])
             d = {}
             for line in out.splitlines():
                 if '=' in line:
@@ -166,8 +196,7 @@ def probe(mp4: str) -> dict:
     # 兜底：解析 ffmpeg -i 的输出
     try:
         ff = find_ffmpeg()
-        txt = subprocess.run([ff, '-hide_banner', '-i', mp4], capture_output=True, text=True,
-                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stderr
+        _, txt = _capture([ff, '-hide_banner', '-i', mp4])
         m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.?\d*)', txt)
         if m:
             h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
@@ -244,7 +273,9 @@ def frame_to_rgba(path: str, size: tuple[int, int], opt: Options,
         alpha = np.where(small_mask >= 0.5, 255, 0).astype(np.uint8)
         if opt.keyline > 0:
             solid = alpha > 0
-            ring = dilate(solid, opt.keyline) & ~solid
+            # 用欧氏距离变换来描边（圆角，且不必按 keyline 迭代）：每帧省几十毫秒，
+            # 批量转换时差别很明显。
+            ring = (ndimage.distance_transform_edt(~solid) <= opt.keyline) & ~solid
             small_rgb = small_rgb.copy()
             small_rgb[ring] = 255
             alpha = alpha.copy()
@@ -300,14 +331,16 @@ def build_palette_opaque(masks: list[np.ndarray], prepped: list[Image.Image], co
 
 
 def boost_palette(palette: list[int], k: float) -> list[int]:
-    """只给调色板提饱和度，索引不变 —— 体积零增长。"""
+    """只给调色板提饱和度，索引不变 —— 体积零增长。
+
+    注意传进来的 palette 里**没有**透明占位色（占位色是调用方在 boost 之后才
+    append 的），所以这里要把每一项都处理到；少处理最后一个会让那一档颜色偏灰。
+    """
     if k == 1.0:
         return palette
     arr = np.asarray(palette, dtype=np.float32).reshape(-1, 3)
-    n = max(1, len(arr) - 1)          # 最后一项是透明占位
-    head = arr[:n]
-    gray = head.mean(axis=1, keepdims=True)
-    arr[:n] = np.clip(gray + (head - gray) * k, 0, 255)
+    gray = arr.mean(axis=1, keepdims=True)
+    arr = np.clip(gray + (arr - gray) * k, 0, 255)
     return arr.astype(np.uint8).flatten().tolist()
 
 
@@ -316,9 +349,21 @@ def boost_palette(palette: list[int], k: float) -> list[int]:
 # ----------------------------------------------------------------------------
 
 def _subsample(frames: list, fps: int, base_fps: float) -> list:
-    step = max(1, int(round(base_fps / fps))) if fps else 1
-    n = int(round(len(frames) * fps / base_fps)) if fps else len(frames)
-    return frames[::step][:max(1, n)]
+    """按目标帧率抽帧，并且必须把第一帧和最后一帧都包进来。
+
+    旧写法是 frames[::step][:n]，从头往后再截 n 帧。当 n 小于源帧数时（3 秒素材
+    几乎总是如此，例如 73 帧 @24fps 抽 10fps 只需要 30 帧），尾巴会被整段丢掉：
+    GIF 在第 59 帧就结束了，动作没走完就跳回第一帧，循环会顿一下。
+    改成在整段上等间隔取 n 帧，首尾都保得住。
+    """
+    if not fps or not frames:
+        return frames
+    n = int(round(len(frames) * fps / base_fps))
+    n = max(1, min(n, len(frames)))
+    if n >= len(frames):
+        return list(frames)
+    idx = np.round(np.linspace(0, len(frames) - 1, n)).astype(int)
+    return [frames[i] for i in idx]
 
 
 def encode_gif(frames: list[Image.Image], out: str, fps: int, opt: Options) -> float:
@@ -383,7 +428,8 @@ def convert(mp4: str, out_dir: str, opt: Options, fmt: str = 'gif',
             return Result(mp4, out=out, ok=True, kb=kb, frames=len(frames), fps=fps,
                           colors=0, message=f'WebP {len(frames)}帧 {fps}fps q{opt.webp_quality}')
 
-        ladder = LADDER_COLOR if opt.prefer == 'color' else LADDER_FPS
+        ladder = (tuple(opt.ladder) if opt.ladder
+                  else (LADDER_COLOR if opt.prefer == 'color' else LADDER_FPS))
         tried = []
         for fps, colors in ladder:
             frames = _subsample(keyed, fps, src_fps)
