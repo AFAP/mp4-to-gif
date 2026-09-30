@@ -25,6 +25,20 @@ dist\usage.txt                 从 docs\usage.md 复制
 
 可选参数：`-OutDir <目录>` 换输出目录，`-Python <路径>` 指定解释器（默认用 `.venv`，没有就找 PATH 里的 `python`）。
 
+## 版本号
+
+版本号的**唯一来源**是仓库根目录的 `VERSION`（一行，形如 `1.2.0`）。`build.ps1` 会：
+
+1. 校验格式 `^\d+\.\d+\.\d+$`，不合法直接报错；
+2. 生成 `AssemblyInfo.cs` 并用 csc 编进启动器 —— 于是资源管理器里 exe 的
+   「文件版本」是 `1.2.0.0`、「产品版本」是 `1.2.0`；
+3. 用 `--add-data "$versionFile;."` 把 `VERSION` 打进 payload —— 于是
+   `mp4togif.exe --version` 打印 `mp4togif 1.2.0`，GUI 标题栏和副标题也显示它。
+
+发布 tag 必须与 `VERSION` 一致（`VERSION` 写 `1.2.0` → tag 打 `v1.2.0`）。
+exe 文件名**故意不带版本号**：README 和「最新版」下载链接都指向
+`releases/latest/download/mp4togif.exe`，版本靠 `--version` 和文件属性体现。
+
 ## 它做了什么
 
 ```
@@ -114,7 +128,10 @@ $usageFileName = 'usage.txt'     # -> dist\usage.txt, copied from docs\usage.md
 | `src\gui.py` | 界面（tkinter）+ 命令行模式（`--cli`） |
 | `src\launcher.cs` | 单文件自解压启动器 |
 | `scripts\build.ps1` | 四步构建脚本（onedir → 启动器 → 拼接 → 校验和） |
+| `VERSION` | 版本号唯一来源（一行 `1.2.0`），打包时写进启动器属性并打进 payload |
 | `requirements.txt` | 全量锁版依赖，CI 按此安装 |
+| `requirements-dev.txt` | 在 `requirements.txt` 基础上加 `pytest`，只用于本地和 CI 测试 |
+| `tests\` | `pytest` 回归测试（抽帧覆盖整段、调色板、抠像、版本号、端到端尾巴） |
 
 ## 命令行模式
 
@@ -133,18 +150,35 @@ $usageFileName = 'usage.txt'     # -> dist\usage.txt, copied from docs\usage.md
 
 | 触发 | 行为 |
 |---|---|
-| 推 tag `v*` | 构建 → 冒烟测试 → 上传 artifact → 发布 GitHub Release（含 exe + `.sha256` + `usage.txt`，自动生成变更说明） |
-| 手动 `Run workflow` | 只构建和冒烟测试，不发布 Release |
+| 推 tag `v*` | 单元测试 → 构建 → 冒烟测试 → 上传 artifact → 发布 GitHub Release（含 exe + `.sha256` + `usage.txt`，自动生成变更说明） |
+| 手动 `Run workflow` | 只跑测试、构建和冒烟测试，不发布 Release |
 
-冒烟测试这一步会真的跑一遍转换：把 `samples\yuejianglou.mp4` 转成 GIF，
-断言退出码为 0，并用 `engine.check_gif()` 校验透明通道是否可用且逐帧稳定。
-测试前会把 PATH 里带 `ffmpeg.exe` 的目录摘掉，**确保验证的是 exe 内置的 ffmpeg**，而不是 runner 上装的那个。
-
-发版流程：
+发版前先跑本地测试（`pytest` 在 `requirements-dev.txt` 里）：
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+python -m pip install -r requirements-dev.txt
+python -m pytest tests -q
 ```
+
+测试里 `tests\test_engine.py` 钉住了两个踩过的坑：抽帧必须覆盖整段（最后一帧不能丢）和
+调色板提饱和不能漏掉最后一项。`test_tail_frames_survive_conversion` 是端到端用例，
+需要 ffmpeg（没有就自动跳过）。
+
+冒烟测试这一步会真的跑一遍转换：先断言 `--version` 报出的版本与 `VERSION` 一致，
+再把 `samples\yuejianglou.mp4` 转成 GIF，断言退出码为 0，并用 `engine.check_gif()`
+校验透明通道是否可用且逐帧稳定。冒烟产物写在 `dist\_smoke\` 子目录里，不会被上传规则捡走。
+测试前会把 PATH 里带 `ffmpeg.exe` 的目录摘掉，**确保验证的是 exe 内置的 ffmpeg**，而不是 runner 上装的那个。
+
+发版流程（`VERSION` 内容要与 tag 一致）：
+
+```powershell
+# 1) 改 VERSION，例如 1.2.0
+# 2) 提交后打标签
+git tag v1.2.0
+git push origin main
+git push origin v1.2.0
+```
+
+只推 `main` **不会**触发构建和发布 —— 这个 workflow 只监听 `v*` tag 和手动触发。
 
 仓库里**永远不提交 exe**，README 顶部的 Release / CI 徽章会在 CI 跑通后自动亮起。

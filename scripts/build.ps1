@@ -51,9 +51,23 @@ $src  = Join-Path $root 'src'
 $work = Join-Path $root 'build'
 $magicText = 'MP4GIF-SFX-v1.0!'      # must be exactly 16 bytes
 
+# ------------------------------------------------------------------ version
+# Single source of truth: the one-line VERSION file at the repo root. It is
+# stamped into the launcher's assembly metadata (so Windows Explorer shows it in
+# the exe's properties) and bundled into the payload (so the app can report it
+# with --version). Release tags are authored to match it; nothing else to bump.
+$versionFile = Join-Path $root 'VERSION'
+if (-not (Test-Path $versionFile)) { throw "VERSION file not found: $versionFile" }
+$version = (Get-Content $versionFile -Raw).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "VERSION must look like 1.2.3, got '$version'"
+}
+
 # ------------------------------------------------------------------ names
 # Everything the build emits must have an ASCII name: GitHub silently renames a
 # release asset with a non-ASCII name to "default.txt" on upload.
+# The exe name stays unversioned on purpose: README and the "latest release"
+# download URL point at mp4togif.exe, and --version reports the real version.
 $appName       = 'mp4togif'      # -> mp4togif.exe, build\onedir\mp4togif\
 $usageFileName = 'usage.txt'     # -> dist\usage.txt, copied from docs\usage.md
 
@@ -91,6 +105,7 @@ $outDir = [IO.Path]::GetFullPath($OutDir)
 Write-Host "python : $py"
 Write-Host "csc    : $csc"
 Write-Host "app    : $appName"
+Write-Host "version: $version"
 
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $work | Out-Null
@@ -99,6 +114,7 @@ New-Item -ItemType Directory -Force -Path $work | Out-Null
 Write-Host '[1/4] PyInstaller onedir ...'
 & $py -m PyInstaller --noconfirm --clean --windowed --onedir `
   --name $appName --paths $src --collect-binaries imageio_ffmpeg `
+  --add-data "$versionFile;." `
   --hidden-import scipy.ndimage `
   --exclude-module scipy.optimize --exclude-module scipy.spatial --exclude-module scipy.interpolate `
   --exclude-module scipy.stats --exclude-module scipy.integrate --exclude-module scipy.fft `
@@ -115,10 +131,20 @@ if (-not (Test-Path $appExe)) { throw "onedir build failed: $appExe not found" }
 
 # ------------------------------------------------------------- 2) launcher
 Write-Host '[2/4] compile launcher ...'
+# Assembly metadata generated from VERSION so the exe's file properties show it.
+$assemblyInfo = Join-Path $work 'AssemblyInfo.cs'
+$assemblyText = @"
+using System.Reflection;
+[assembly: AssemblyVersion("$version.0")]
+[assembly: AssemblyFileVersion("$version.0")]
+[assembly: AssemblyProduct("mp4togif")]
+[assembly: AssemblyInformationalVersion("$version")]
+"@
+[IO.File]::WriteAllText($assemblyInfo, $assemblyText, (New-Object Text.UTF8Encoding $false))
 $launcher = Join-Path $work 'launcher.exe'
 & $csc /nologo /target:winexe /optimize+ /out:$launcher `
   /r:System.dll /r:System.Core.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
-  /r:System.Windows.Forms.dll /r:System.Drawing.dll (Join-Path $src 'launcher.cs')
+  /r:System.Windows.Forms.dll /r:System.Drawing.dll (Join-Path $src 'launcher.cs') $assemblyInfo
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcher)) { throw 'launcher compile failed' }
 
 # ------------------------------------------------------- 3) single-file exe
@@ -160,5 +186,5 @@ if ($usageFileName -and (Test-Path $usageSrc)) {
 
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 $mbSize = (Get-Item $out).Length / 1MB
-Write-Host ('built {0}  {1:N1} MB' -f $out, $mbSize)
+Write-Host ('built {0}  v{1}  {2:N1} MB' -f $out, $version, $mbSize)
 Write-Host "sha256 $hash"

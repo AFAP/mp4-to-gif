@@ -134,11 +134,14 @@ mp4togif.exe --cli <文件或文件夹> [选项]
 | `--brightness 1.1` | 提亮 |
 | `--saturation 1.1` | 提饱和度 |
 | `--palette-sat 1.3` | 调色板饱和度（体积零增长） |
+| `--configs "12,64" "10,64"` | 自定义阶梯：每项「帧率,色数」，按顺序试到进体积上限为止 |
 | `--threshold 244` | 抠像阈值 |
 | `--keyline 2` | 白描边宽度 |
 | `--webp-quality 80` | WebP 质量 |
 | `--keep-bg` | 不抠底、保留原背景 |
 | `--log <文件>` | 日志文件（默认输出目录下的 `_转换日志.txt`） |
+
+另：`mp4togif.exe --version` 打印版本号（如 `mp4togif 1.2.0`）。
 
 例：
 
@@ -146,8 +149,10 @@ mp4togif.exe --cli <文件或文件夹> [选项]
 mp4togif.exe --cli D:\videos --out D:\out --size 240x240 --limit 500 --brightness 1.1
 ```
 
-- 命令行模式会在输出目录写一份 `_转换日志.txt`。
-- 程序是 GUI 子系统（`--windowed`），`--cli` **不往控制台打印**，结果看日志文件。
+- 命令行模式会在输出目录写一份 `_转换日志.txt`，同时把同样的内容打到控制台。
+- 程序是 GUI 子系统（`--windowed`），但 `--cli` 会自己接回标准输出；从 PowerShell 调用时
+  注意 PowerShell **不会等 GUI 程序结束**，要串联后续步骤用
+  `Start-Process -FilePath mp4togif.exe -Wait -PassThru -ArgumentList @('--cli', ...)`。
 - 退出码：`0` 全部成功，`1` 有失败，`2` 没找到视频文件 —— 方便脚本判错。
 
 ## 五、常见问题

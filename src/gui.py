@@ -21,6 +21,31 @@ from engine import Options
 APP_TITLE = 'MP4 → 透明 GIF / WebP'
 APP_SUB = '把视频转成带透明背景的动图，内置 ffmpeg，不需要额外安装'
 
+
+def app_version() -> str:
+    """读版本号。唯一来源是仓库根目录的 VERSION，打包时被放进 payload。
+
+    源码运行：src/gui.py → 上一级就是仓库根目录。
+    打包运行：build.ps1 用 --add-data 把它放进 sys._MEIPASS。
+    """
+    for base in (getattr(sys, '_MEIPASS', None),
+                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+        if not base:
+            continue
+        p = os.path.join(base, 'VERSION')
+        try:
+            if os.path.exists(p):
+                with open(p, encoding='utf-8') as fh:
+                    v = fh.read().strip()
+                if v:
+                    return v
+        except OSError:
+            pass
+    return 'dev'
+
+
+APP_VER = app_version()
+
 PRESETS = [
     ('微信表情 240×240', 240, 240),
     ('方形 400×400', 400, 400),
@@ -102,7 +127,7 @@ class App:
         self.adv_open = tk.BooleanVar(value=False)
         self.last_out_dir = ''           # 最近一次实际写入的输出目录
 
-        root.title(APP_TITLE)
+        root.title(f'{APP_TITLE}  v{APP_VER}')
         root.configure(bg=BG)
         self._setup_style()
         self._build_ui()
@@ -179,7 +204,8 @@ class App:
         hb = tk.Frame(head, bg=CARD)
         hb.pack(fill='x', padx=22, pady=14)
         tk.Label(hb, text=APP_TITLE, bg=CARD, fg=TXT, font=FH).pack(anchor='w')
-        tk.Label(hb, text=APP_SUB, bg=CARD, fg=SUB, font=FS).pack(anchor='w', pady=(2, 0))
+        tk.Label(hb, text=APP_SUB + f'    v{APP_VER}', bg=CARD, fg=SUB,
+                 font=FS).pack(anchor='w', pady=(2, 0))
         tk.Frame(root, bg=LINE, height=1).pack(fill='x')
 
         body = tk.Frame(root, bg=BG)
@@ -414,7 +440,7 @@ class App:
             self.var_out.set(d)
 
     def open_out(self):
-        """在资源管理器里打开成品所在的目录。
+        r"""在资源管理器里打开成品所在的目录。
 
         优先用「4 保存到」里指定的目录，其次是最近一次转换实际写入的目录，
         最后按第一个待转视频推算默认输出目录（视频同级的 gif\ 或 webp\）。
@@ -594,8 +620,12 @@ def cli(argv: list[str]) -> int:
       --brightness 1.1   提亮
       --saturation 1.1   提饱和度
       --palette-sat 1.3  调色板饱和度（体积零增长）
+      --configs "12,64" "10,64"
+                         自定义阶梯：每项「帧率,色数」，按顺序试到进体积上限为止
       --keep-bg          不抠底
       --log <文件>       日志文件（默认输出目录下的 _转换日志.txt）
+
+    另有 mp4togif.exe --version 打印版本号。
     """
     import argparse
     ap = argparse.ArgumentParser(prog='mp4togif --cli', add_help=True)
@@ -612,15 +642,26 @@ def cli(argv: list[str]) -> int:
     ap.add_argument('--keyline', type=int, default=2)
     ap.add_argument('--webp-quality', type=int, default=80)
     ap.add_argument('--keep-bg', action='store_true')
+    ap.add_argument('--configs', nargs='*', default=None,
+                    help="自定义阶梯，每项 '帧率,色数'，按顺序试到进体积上限为止")
     ap.add_argument('--log', default='')
     a = ap.parse_args(argv)
+
+    ladder = ()
+    if a.configs:
+        try:
+            ladder = tuple(tuple(int(x) for x in c.replace('x', ',').split(',')[:2])
+                           for c in a.configs)
+        except Exception:                            # noqa: BLE001
+            _safe_print('--configs 格式应为 "12,64" "10,64" ...')
+            return 2
 
     w, _, h = a.size.lower().partition('x')
     opt = Options(out_width=int(w), out_height=int(h or w), limit_kb=a.limit,
                   prefer=a.prefer, threshold=a.threshold, keyline=a.keyline,
                   brightness=a.brightness, saturation=a.saturation,
                   palette_sat=a.palette_sat, keep_background=a.keep_bg,
-                  webp_quality=a.webp_quality)
+                  webp_quality=a.webp_quality, ladder=ladder)
 
     src = os.path.abspath(a.input)
     if os.path.isdir(src):
@@ -677,6 +718,46 @@ def _safe_print(s: str) -> None:
         pass
 
 
+def _ensure_console_stdio() -> None:
+    """让 --windowed 打包出来的 exe 在命令行里能回显。
+
+    PyInstaller 的 windowed 模式把 sys.stdout / sys.stderr 设成 None，于是双击运行
+    干净、但从终端跑 --cli 时一句提示都没有（只有日志文件）。这里把它们接回来：
+
+      1) 调用方（脚本、CI、管道）已经给了标准句柄，直接用 fd 1 / 2 重新打开；
+      2) 没有句柄但当前进程有父控制台（从终端直接跑），附着上去写 CONOUT$；
+      3) 双击启动时两者都不成立，静默跳过，行为和以前一样。
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    if os.name != 'nt':
+        return
+    for fd, name in ((1, 'stdout'), (2, 'stderr')):
+        if getattr(sys, name) is not None:
+            continue
+        try:
+            setattr(sys, name, open(fd, 'w', encoding='utf-8', errors='replace',
+                                    buffering=1))
+        except OSError:
+            pass
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        import ctypes
+        if not ctypes.windll.kernel32.AttachConsole(-1):    # ATTACH_PARENT_PROCESS
+            return
+    except Exception:
+        return
+    for name in ('stdout', 'stderr'):
+        if getattr(sys, name) is not None:
+            continue
+        try:
+            setattr(sys, name, open('CONOUT$', 'w', encoding='utf-8',
+                                    errors='replace', buffering=1))
+        except OSError:
+            pass
+
+
 def _boot_log(msg: str) -> None:
     """最早的启动诊断：--windowed 打包后没有 stdout，出问题只能靠这个文件。"""
     try:
@@ -689,8 +770,13 @@ def _boot_log(msg: str) -> None:
 
 
 def main():
-    _boot_log(f'start argv={sys.argv!r} frozen={getattr(sys, "frozen", False)}')
+    _ensure_console_stdio()
+    _boot_log(f'start argv={sys.argv!r} frozen={getattr(sys, "frozen", False)} '
+              f'version={APP_VER}')
     try:
+        if len(sys.argv) > 1 and sys.argv[1] == '--version':
+            _safe_print(f'mp4togif {APP_VER}')
+            raise SystemExit(0)
         if len(sys.argv) > 1 and sys.argv[1] == '--cli':
             rc = cli(sys.argv[2:])
             _boot_log(f'cli done rc={rc}')

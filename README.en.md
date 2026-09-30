@@ -163,11 +163,14 @@ mp4togif.exe --cli <file-or-folder> [options]
 | `--brightness 1.1` | Brightness |
 | `--saturation 1.1` | Saturation |
 | `--palette-sat 1.3` | Palette saturation (zero size cost) |
+| `--configs "12,64" "10,64"` | Custom ladder: one `fps,colors` entry per step, tried in order until it fits the size budget |
 | `--threshold 244` | Keying threshold |
 | `--keyline 2` | White keyline width in pixels |
 | `--webp-quality 80` | WebP quality |
 | `--keep-bg` | Keep the original background (no keying) |
 | `--log <file>` | Log file (default: `_转换日志.txt` in the output directory) |
+
+Also: `mp4togif.exe --version` prints the version (e.g. `mp4togif 1.2.0`).
 
 Example:
 
@@ -177,7 +180,10 @@ Example:
 
 Exit codes: `0` all succeeded, `1` some failed, `2` no video found — handy for batch scripts and CI. CLI mode writes `_转换日志.txt` into the output directory.
 
-> The packaged app is a GUI-subsystem binary (`--windowed`), so `--cli` mode does **not** print to the console; read `_转换日志.txt` for results.
+> The packaged app is a GUI-subsystem binary (`--windowed`), but `--cli` reattaches the standard
+> streams, so the log is echoed to the console too. PowerShell does **not** wait for GUI
+> applications — chain follow-up steps with
+> `Start-Process -FilePath .\mp4togif.exe -Wait -PassThru -ArgumentList @('--cli', ...)`.
 
 ## 7. Parameters
 

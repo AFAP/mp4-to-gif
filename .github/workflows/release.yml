@@ -28,18 +28,37 @@ jobs:
 
       - name: Install pinned dependencies
         shell: pwsh
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Unit tests
+        shell: pwsh
+        run: python -m pytest tests -q
 
       - name: Build single-file exe
         shell: pwsh
         run: ./scripts/build.ps1
 
-      - name: Smoke test (CLI conversion)
+      - name: Smoke test (version + CLI conversion)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = @(Get-ChildItem dist -Filter *.exe)[0]
           Write-Host "smoke: $($exe.FullName)"
+          # 冒烟用的临时文件全放 dist/_smoke 子目录，避免被下面 dist/*.txt 的上传规则捡走
+          $smokeOut = Join-Path (Get-Location).Path 'dist/_smoke'
+          Remove-Item -Recurse -Force $smokeOut -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $smokeOut | Out-Null
+          # VERSION 必须被打进 exe，--version 要能报出来
+          $want = (Get-Content VERSION -Raw).Trim()
+          $verOut = Join-Path $smokeOut 'version.txt'
+          $vp = Start-Process -FilePath $exe.FullName -ArgumentList @('--version') `
+                -Wait -PassThru -RedirectStandardOutput $verOut -NoNewWindow
+          if ($vp.ExitCode -ne 0) { throw "smoke: --version exit code $($vp.ExitCode)" }
+          $verText = Get-Content -Raw $verOut
+          Write-Host "smoke: --version -> $verText"
+          if ($verText -notmatch [regex]::Escape($want)) {
+            throw "smoke: --version did not report $want (got '$verText')"
+          }
           # Hide any ffmpeg installed on the runner, so the ffmpeg bundled inside the
           # exe is the one that gets exercised.
           $onPath = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
@@ -51,7 +70,6 @@ jobs:
           # Absolute paths: the app inherits this step's working directory, but do not
           # rely on it - a wrong cwd silently converts the wrong (or no) file.
           $sample = (Resolve-Path 'samples/yuejianglou.mp4').Path
-          $smokeOut = Join-Path (Get-Location).Path 'dist/_smoke'
           $cliArgs = @('--cli', $sample, '--out', $smokeOut, '--size', '240x240', '--limit', '500')
           $p = Start-Process -FilePath $exe.FullName -ArgumentList $cliArgs -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "smoke: launcher/app exit code $($p.ExitCode)" }
@@ -60,7 +78,8 @@ jobs:
           Write-Host "smoke: $($gif[0].Name) $($gif[0].Length) bytes"
           # ASCII-only assertions on purpose: the log is UTF-8, but the patterns must
           # not depend on how this script itself was encoded.
-          $logFile = @(Get-ChildItem $smokeOut -Filter *.txt)[0]
+          $logFile = @(Get-ChildItem $smokeOut -Filter *.txt |
+                       Where-Object { $_.Name -ne 'version.txt' })[0]
           $log = Get-Content -Raw -Encoding UTF8 $logFile.FullName
           Write-Host $log
           if ($log -notmatch 'OK\s+GIF') { throw 'smoke: conversion did not report success' }
